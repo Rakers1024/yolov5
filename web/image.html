@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Draw Box</title>
+    <style>
+        #video-container {
+            position: relative;
+            display: inline-block;
+        }
+        #video-feed {
+            max-width: 100%;
+            display: block;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+        video{
+            position: absolute;
+        }
+    </style>
+    <!-- Fabric.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+</head>
+<body>
+    <h1>Camera Draw Box</h1>
+    <div>
+        <label for="stream-url">视频流地址：</label>
+        <input type="text" id="stream-url" placeholder="输入 RTSP/HTTP 视频流地址" style="width: 300px;">
+        <button onclick="loadStream()">加载视频流</button>
+        <button onclick="startCamera()">使用本机摄像头</button>
+        <button onclick="stopCamera()">停止摄像头</button>
+    </div>
+    <div id="video-container">
+        <video id="video-feed" autoplay></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    <div>
+        <button onclick="startDrawing()">开始绘制</button>
+        <button onclick="stopDrawing()">停止绘制</button>
+        <button onclick="clearCanvas()">清除所有框</button>
+        <select id="export-format">
+            <option value="coordinates">四坐标 (x1,y1,x2,y2)</option>
+            <option value="normalized">归一化坐标 (x1,y1,x2,y2)</option>
+            <option value="center">中心点+宽高 (cx,cy,w,h)</option>
+            <option value="topleft">左上角+宽高 (x,y,w,h)</option>
+        </select>
+        <button onclick="exportJson()">导出 JSON</button>
+    </div>
+
+    <script>
+        let canvas;
+        let video = document.getElementById('video-feed');
+        let isDrawing = false;
+        let rect;
+        let currentStream = null;
+        let canDraw = false;
+
+        // 初始化 Fabric.js 画布
+        function initCanvas() {
+            canvas = new fabric.Canvas('canvas', {
+                isDrawingMode: false, // 禁用自由绘制
+                selection: false,     // 禁用选择
+            });
+
+            // 监听鼠标按下事件
+            canvas.on('mouse:down', (options) => {
+                if (!canDraw) return; // 只有在允许绘制时才能画框
+                isDrawing = true;
+                const startX = options.pointer.x;
+                const startY = options.pointer.y;
+
+                // 创建矩形
+                rect = new fabric.Rect({
+                    left: startX,
+                    top: startY,
+                    width: 0,
+                    height: 0,
+                    fill: 'transparent',
+                    stroke: 'blue',
+                    strokeWidth: 2,
+                });
+                canvas.add(rect);
+            });
+
+            // 监听鼠标移动事件
+            canvas.on('mouse:move', (options) => {
+                if (!isDrawing) return;
+                const moveX = options.pointer.x;
+                const moveY = options.pointer.y;
+
+                // 更新矩形大小
+                rect.set({
+                    width: moveX - rect.left,
+                    height: moveY - rect.top,
+                });
+                canvas.renderAll();
+            });
+
+            // 监听鼠标松开事件
+            canvas.on('mouse:up', () => {
+                isDrawing = false;
+            });
+        }
+
+        // 加载视频流
+        function loadStream() {
+            stopCamera();
+            if (!video) {
+                video = document.getElementById('video-feed');
+            }
+            const streamUrl = document.getElementById('stream-url').value;
+            if (!streamUrl) {
+                alert('请输入视频流地址！');
+                return;
+            }
+
+            video.src = streamUrl;
+            video.onloadedmetadata = () => {
+                video.style.width = video.videoWidth + 'px';
+                video.style.height = video.videoHeight + 'px';
+                canvas.setWidth(video.videoWidth);
+                canvas.setHeight(video.videoHeight);
+            };
+        }
+
+        // 启动本机摄像头
+        function startCamera() {
+            stopCamera();
+            if (!video) {
+                video = document.getElementById('video-feed');
+            }
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((stream) => {
+                    currentStream = stream;
+                    video.srcObject = stream;
+                    
+                    video.onloadedmetadata = () => {
+                        video.style.width = video.videoWidth + 'px';
+                        video.style.height = video.videoHeight + 'px';
+                        canvas.setWidth(video.videoWidth);
+                        canvas.setHeight(video.videoHeight);
+                    };
+                })
+                .catch((error) => {
+                    alert('无法访问摄像头：' + error.message);
+                });
+        }
+
+        // 停止摄像头
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+            if (video) {
+                video.srcObject = null;
+                video.src = '';
+            }
+            // 清除画布上的所有框
+            canvas.clear();
+        }
+
+        // 添加：开始绘制功能
+        function startDrawing() {
+            canDraw = true;
+            canvas.selection = false;
+            canvas.hoverCursor = 'crosshair';
+        }
+
+        // 添加：停止绘制功能
+        function stopDrawing() {
+            canDraw = false;
+            canvas.selection = true;
+            canvas.hoverCursor = 'default';
+        }
+
+        // 添加：清除画布功能
+        function clearCanvas() {
+            canvas.clear();
+        }
+
+        // 修改：导出 JSON 数据
+        function exportJson() {
+            const objects = canvas.getObjects();
+            const format = document.getElementById('export-format').value;
+            let boxes;
+            
+            switch (format) {
+                case 'coordinates':
+                    boxes = objects.map((obj) => ({
+                        x1: Math.round(obj.left),
+                        y1: Math.round(obj.top),
+                        x2: Math.round(obj.left + obj.width),
+                        y2: Math.round(obj.top + obj.height)
+                    }));
+                    break;
+                    
+                case 'normalized':
+                    boxes = objects.map((obj) => ({
+                        x1: (obj.left / canvas.width).toFixed(4),
+                        y1: (obj.top / canvas.height).toFixed(4),
+                        x2: ((obj.left + obj.width) / canvas.width).toFixed(4),
+                        y2: ((obj.top + obj.height) / canvas.height).toFixed(4)
+                    }));
+                    break;
+                    
+                case 'center':
+                    boxes = objects.map((obj) => ({
+                        cx: Math.round(obj.left + obj.width / 2),
+                        cy: Math.round(obj.top + obj.height / 2),
+                        w: Math.round(obj.width),
+                        h: Math.round(obj.height)
+                    }));
+                    break;
+                    
+                case 'topleft':
+                    boxes = objects.map((obj) => ({
+                        x: Math.round(obj.left),
+                        y: Math.round(obj.top),
+                        w: Math.round(obj.width),
+                        h: Math.round(obj.height)
+                    }));
+                    break;
+            }
+
+            const blob = new Blob([JSON.stringify(boxes, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'boxes.json';
+            a.click();
+        }
+
+        // 初始化
+        initCanvas();
+
+        // 初始化时默认停止绘制
+        stopDrawing();
+    </script>
+</body>
+</html>
