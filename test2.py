@@ -21,13 +21,8 @@ def normalize_to_pixel(box, img_height, img_width):
     return int(x1), int(y1), int(x2), int(y2)
 
 # Main process
-def process_image(image_path, boxes_path):
-    # Read image
-    image = cv2.imread(image_path)
-    img_height, img_width = image.shape[:2]
-    
-    # Read boxes
-    boxes = read_boxes(boxes_path)
+def process_frame(frame, boxes):
+    img_height, img_width = frame.shape[:2]
     
     # Process each box
     results_dict = {}
@@ -36,7 +31,7 @@ def process_image(image_path, boxes_path):
         x1, y1, x2, y2 = normalize_to_pixel(box, img_height, img_width)
         
         # Crop image according to box
-        cropped = image[y1:y2, x1:x2]
+        cropped = frame[y1:y2, x1:x2]
         
         # Predict with the model
         results = model(cropped)
@@ -54,24 +49,44 @@ def process_image(image_path, boxes_path):
                 results_dict[name] += names.count(name)
             
             # Draw box on original image
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             
             # Add label
             label = f"Box {i+1}"
-            cv2.putText(image, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-    # Save results
-    cv2.imwrite('web/output.png', image)
-    
-    # Print detection results
-    print("\nDetection Results:")
-    for obj, count in results_dict.items():
-        print(f"{obj}: {count}")
-
-    return results_dict
+    return frame, results_dict
 
 if __name__ == "__main__":
-    image_path = "web/test.png"
-    boxes_path = "web/Boxes.json"
-    process_image(image_path, boxes_path)
+    # Initialize video capture
+    cap = cv2.VideoCapture(0)
     
+    # Read boxes
+    boxes_path = "web/Boxes.json"
+    boxes = read_boxes(boxes_path)
+    
+    while True:
+        # Read frame from camera
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
+            
+        # Process frame
+        processed_frame, results = process_frame(frame, boxes)
+        
+        # Display results
+        cv2.imshow('Real-time Detection', processed_frame)
+        
+        # Print detection results
+        print("\nDetection Results:")
+        for obj, count in results.items():
+            print(f"{obj}: {count}")
+            
+        # Break loop with 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    
+    # Release resources
+    cap.release()
+    cv2.destroyAllWindows()

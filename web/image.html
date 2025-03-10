@@ -44,6 +44,7 @@
         <button onclick="startDrawing()">开始绘制</button>
         <button onclick="stopDrawing()">停止绘制</button>
         <button onclick="clearCanvas()">清除所有框</button>
+        <button onclick="captureImage()">截图下载</button>
         <select id="export-format">
             <option value="coordinates">四坐标 (x1,y1,x2,y2)</option>
             <option value="normalized">归一化坐标 (x1,y1,x2,y2)</option>
@@ -184,6 +185,33 @@
         // 添加：清除画布功能
         function clearCanvas() {
             canvas.clear();
+        }
+
+        // 添加：截图下载功能
+        function captureImage() {
+            // 创建一个临时canvas来合成图像
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const ctx = tempCanvas.getContext('2d');
+
+            // 首先绘制视频帧
+            ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+            // 然后绘制标注框
+            const fabricObjects = canvas.getObjects();
+            fabricObjects.forEach(obj => {
+                ctx.strokeStyle = 'blue';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(obj.left, obj.top, obj.width, obj.height);
+            });
+
+            // 创建下载链接
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const link = document.createElement('a');
+            link.download = `capture-${timestamp}.png`;
+            link.href = tempCanvas.toDataURL('image/png');
+            link.click();
         }
 
         // 修改：导出 JSON 数据
